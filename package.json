@@ -1,0 +1,21 @@
+{
+  "name": "user-authorization-system",
+  "version": "1.0.0",
+  "main": "index.js",
+   "type": "module",
+  "scripts": {
+    "dev": "npm run src/index.js"
+  },
+  "author": "Stuti Goel",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "express": "^4.19.2",
+    "mongoose": "^8.5.0",
+    "node": "^18.20.4"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  }
+}
