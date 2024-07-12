@@ -2,15 +2,16 @@
   "name": "user-authorization-system",
   "version": "1.0.0",
   "main": "index.js",
-   "type": "module",
+  "type": "module",
   "scripts": {
-    "dev": "npm run src/index.js"
+    "dev": "nodemon -r dotenv/config src/index.js"
   },
   "author": "Stuti Goel",
   "license": "ISC",
   "description": "",
   "dependencies": {
     "bcrypt": "^5.1.1",
+    "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "mongoose": "^8.5.0",
     "node": "^18.20.4"
