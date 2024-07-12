@@ -5,6 +5,7 @@ import ApiResponse from "../utils/ApiResponse.js";
 import bcrypt from "bcrypt"
 import { EmailVerification } from "../models/userVerfication.model.js";
 import nodemailer from "nodemailer"
+import mongoose from "mongoose";
 
 const isEmpty = (str) => !str || str.trim() === '';
 
@@ -65,7 +66,7 @@ const sendOTPVerificationEmail= async({userId,email},res)=>{
 
         const hashedOtp= await bcrypt.hash(otp,saltRounds);
 
-        const expiry= 5 * 60000; //5mins in millisecond
+        const expiry= 300000; //5mins in millisecond
         const newOtp= await EmailVerification.create({
             userId,
             otp:hashedOtp,
@@ -95,6 +96,48 @@ const sendOTPVerificationEmail= async({userId,email},res)=>{
         }
     }
 }
+
+const verifyOTP= asyncHandler(async(req,res)=>{
+    
+    const {userId, otp}= req.body
+    const UserOTPVerificationRecord= await EmailVerification.findOne({
+        userId: new mongoose.Types.ObjectId(userId)
+    })
+   
+    if(!UserOTPVerificationRecord){
+        throw new ApiError(400,"Account does not exist.Try Login Again")
+    }
+
+    const {expiresAt , otp:hashedOTP}= UserOTPVerificationRecord;
+    
+    if(expiresAt<Date.now()){
+        throw new ApiError(400,"OTP has expired!! Regenrate a new OTP")
+    }
+
+    const isSameOTP= await bcrypt.compare(otp,hashedOTP);
+    console.log(isSameOTP);
+    if(!isSameOTP){
+        throw new ApiError(400,"Wrong OTP!!")
+    }
+
+    const updatedUser= await User.updateOne({
+            _id:new mongoose.Types.ObjectId(userId)
+        },
+        {
+            isVerified:true
+        });
+
+    if(!updatedUser){
+        throw new ApiError(500,"Error Ocuured while updating User")
+    }
+
+    await EmailVerification.deleteMany({userId});
+
+    return res.status(200)
+    .json(new ApiResponse(200,updatedUser,"User Successfully verified!!"))
+
+    
+})
 
 const registerUser= asyncHandler(async(req,res)=>{
    
@@ -154,6 +197,11 @@ const registerUser= asyncHandler(async(req,res)=>{
     
 })
 
+const regenerateOTP= asyncHandler(async(req,res)=>{
+    const {userId,email}= req.body;
+    
+})
+
 export {
-    registerUser
+    registerUser,verifyOTP,regenerateOTP
 }

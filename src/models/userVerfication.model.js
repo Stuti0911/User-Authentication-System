@@ -11,7 +11,9 @@ const verificationSchema= mongoose.Schema({
         type:String
     },
     expiresAt:{
-        type:Date
+        type:Date,
+        required:true,
+        default: () => Date.now() + (5 * 60000)
     },
     createdAt:{
         type:Date
@@ -19,4 +21,4 @@ const verificationSchema= mongoose.Schema({
 })
 
 
-export const EmailVerification= mongoose.model('UEmailVerificationser',verificationSchema);
+export const EmailVerification= mongoose.model('EmailVerification',verificationSchema);
