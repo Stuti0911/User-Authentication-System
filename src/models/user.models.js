@@ -42,6 +42,10 @@ const userSchema= mongoose.Schema({
     isActive:{
         type:Boolean,
         default:false
+    },
+    isVerified:{
+        type:Boolean,
+        default:false
     }
 },{timeStamps:true}
 )
