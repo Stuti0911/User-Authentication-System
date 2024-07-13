@@ -6,7 +6,7 @@ import bcrypt from "bcrypt"
 import { EmailVerification } from "../models/userVerfication.model.js";
 import nodemailer from "nodemailer"
 import mongoose from "mongoose";
-
+import cookieParser from "cookie-parser";
 const isEmpty = (str) => !str || str.trim() === '';
 
 const checkPhoneNumber =(phoneNumber)=> phoneNumber.length==10
@@ -85,7 +85,7 @@ const sendOTPVerificationEmail= async({userId,email},res)=>{
             console.log("PROBLEMM HEREEE");
         }
         res.status(200).json({
-            status:"Prending",
+            status:"Pending",
             message:"Pending !! Email Verification Otp Send!! "
         })
 
@@ -97,15 +97,81 @@ const sendOTPVerificationEmail= async({userId,email},res)=>{
     }
 }
 
+const generateAccessAndRefreshToken= async(userid)=>{
+    try {
+        const user= await User.findById({
+            _id: new mongoose.Types.ObjectId(userid)
+        });
+    
+        const accessToken= await user.generateAccessToken();
+        const refreshToken= await user.generateRefreshToken();
+       
+        if(!accessToken){
+            throw new ApiError(500,"Error while generation accessToken");
+        }
+    
+        if(!refreshToken){
+            throw new ApiError(500,"Error while generation refrehToken");
+        }
+    
+        user.refreshToken=refreshToken;
+        await user.save({validateBeforeSave:false})
+    
+        return {accessToken,refreshToken}
+    } catch (error) {
+        console.log(`ERROR!! Token generating`);
+    }
+}
+const registerUser= asyncHandler(async(req,res)=>{
+   
+    const {userName,firstName,lastName,email,password,phoneNumber}= req.body;
+
+    validateRequestBody({firstName,lastName,password,email,phoneNumber});
+
+    //check if user already exists with same email or phone number
+    const checkUser= await User.find({
+        $or:[{email},{phoneNumber}]
+    })
+    if(!checkUser){
+        throw new ApiError(400,"User is already registered")
+    }
+    
+    const user= await User({
+        userName,
+        firstName,
+        lastName,
+        phoneNumber,
+        email,
+        password,
+        isVerified:false
+    })
+    try {
+        const savedUser = await user.save();
+        await sendOTPVerificationEmail({ userId: savedUser._id, email }, res);
+    } catch (error) {
+        console.error(`ERROR!! while saving user: ${error}`);
+        if (!res.headersSent) {
+            res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+    
+})
+
 const verifyOTP= asyncHandler(async(req,res)=>{
     
-    const {userId, otp}= req.body
+    const {email, otp}= req.body
+
+    let user= await User.findOne({email});
+    if(!user){
+        throw new ApiError(400,"User is not registered!!")
+    }
+
     const UserOTPVerificationRecord= await EmailVerification.findOne({
-        userId: new mongoose.Types.ObjectId(userId)
+        userId: new mongoose.Types.ObjectId(user._id)
     })
    
     if(!UserOTPVerificationRecord){
-        throw new ApiError(400,"Account does not exist.Try Login Again")
+        throw new ApiError(400,"Account does not exist or you have already verified.Try Registering Again")
     }
 
     const {expiresAt , otp:hashedOTP}= UserOTPVerificationRecord;
@@ -121,7 +187,7 @@ const verifyOTP= asyncHandler(async(req,res)=>{
     }
 
     const updatedUser= await User.updateOne({
-            _id:new mongoose.Types.ObjectId(userId)
+            _id:new mongoose.Types.ObjectId(user._id)
         },
         {
             isVerified:true
@@ -131,77 +197,68 @@ const verifyOTP= asyncHandler(async(req,res)=>{
         throw new ApiError(500,"Error Ocuured while updating User")
     }
 
-    await EmailVerification.deleteMany({userId});
-
+    await EmailVerification.deleteMany({userId:user._id});
+    
+    user= await User.find({_id:new mongoose.Types.ObjectId(user._id)}).select("-password")
     return res.status(200)
-    .json(new ApiResponse(200,updatedUser,"User Successfully verified!!"))
-
-    
+    .json(new ApiResponse(200,user,"User Successfully verified!!"))    
 })
 
-const registerUser= asyncHandler(async(req,res)=>{
-   
-    const {userName,firstName,lastName,email,password,phoneNumber}= req.body;
-
-    validateRequestBody({firstName,lastName,password,email,phoneNumber});
-
-    //check if user already exists with same email
-    const checkUserByEmail= await User.findOne({email})
-    if(checkUserByEmail){
-        throw new ApiError(400,"User email is already registered")
-    }
-    
-    const checkUserByPhoneNumber= await User.findOne({phoneNumber})
-    if(checkUserByPhoneNumber){
-        throw new ApiError(400,"User phone number is already registered")
-    }
-
-    const user= await User({
-        userName,
-        firstName,
-        lastName,
-        phoneNumber,
-        email,
-        password,
-        isVerified:false
-    })
-
-    // user.save().
-    // then((result)=>{
-    //     sendOTPVerificationEmail(result,res);
-    // })
-    // .catch((err)=>console.log(err))
-
-
-    // if(!user){
-    //     throw new ApiError(500,"Error Occured While Registering USer")
-    // }
-
-    // return res.status(200)
-    // .json(
-    //     new ApiResponse(
-    //         200,
-    //         user,
-    //         "User registered Successfully"
-    //     )
-    // )
-    try {
-        const savedUser = await user.save();
-        await sendOTPVerificationEmail({ userId: savedUser._id, email }, res);
-    } catch (error) {
-        console.error(`ERROR!! while saving user: ${error}`);
-        if (!res.headersSent) {
-            res.status(500).json({ error: 'Internal server error' });
-        }
-    }
-    
-})
 
 const regenerateOTP= asyncHandler(async(req,res)=>{
-    const {userId,email}= req.body;
+    const {email}= req.body;
+    if(!email){
+        throw new ApiError(400,"Email is missing")
+    }
+    const user= await User.findOne({email});
+    await EmailVerification.deleteMany({userId: user._id});
+
+    await sendOTPVerificationEmail({ userId: user._id, email}, res);
+})
+
+const loginUser =asyncHandler(async(req,res)=>{
+    const {email,password}= req.body;
+
+    if(!email || email.trim()===''){
+        throw new ApiError(400,"Email is missing");
+    }
+    if(!password || password.trim()===""){
+        throw new ApiError(400,"Password is missing");
+    }
+
+    const user= await User.findOne({email});
+    if(!user){
+        throw new ApiError(400,"User does not exist")
+    }
+
+    if(!user.isVerified){
+        throw new ApiError(400,"Validate Email First")
+    }
     
+    const checkPassword= await user.comparePassword(password)
+    if(!checkPassword){
+        throw new ApiError(400, "Password is Wrong!!")
+    }
+
+    const{accessToken,refreshToken}= await generateAccessAndRefreshToken(user._id);
+
+    const updatedUser=await User.findById(user._id).select(
+        "-password -refreshToken"
+    )
+
+    const options={
+        httpOnly:true,
+        secure:true
+    }
+
+    return res.status(200)
+    .cookie("AccessToken",accessToken,options)
+    .cookie("RefreshToken",refreshToken,options)
+    .json(
+        new ApiResponse(200,updatedUser,"User logged In!!")
+    )
 })
 
 export {
-    registerUser,verifyOTP,regenerateOTP
+    registerUser,verifyOTP,regenerateOTP,loginUser
 }

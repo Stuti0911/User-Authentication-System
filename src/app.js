@@ -1,8 +1,10 @@
 import express from "express"
-import userRouters from "./routes/user.route.js"
+import cookieParser from "cookie-parser";
 
 const app= express();
 app.use(express.json({limit:"16kb"}))
+app.use(cookieParser())
+
 app.use((err, req, res, next) => {
     const statusCode = err.statuscode || 500;
     res.status(statusCode).json({
@@ -12,6 +14,8 @@ app.use((err, req, res, next) => {
         data: err.data
     });
 });
+
+import userRouters from "./routes/user.route.js"
 
 app.use("/api/v1/users",userRouters)
 
